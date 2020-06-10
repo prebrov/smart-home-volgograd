@@ -1,0 +1,536 @@
+version: '3.7'
+
+services:
+
+  traefik:
+    container_name: traefik
+    image: traefik
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=smart-home_smarthome-network"
+      - "traefik.http.routers.traefik-api.rule=Host(`traefik.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.traefik-api.entrypoints=http"
+      - "traefik.http.routers.traefik-api.middlewares=redirect@file"
+      - "traefik.http.routers.traefik-api-secured.rule=Host(`traefik.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.traefik-api-secured.entrypoints=https"
+      - "traefik.http.routers.traefik-api-secured.tls=true"
+      - "traefik.http.services.traefik-api.loadbalancer.server.port=8181"
+      # - "traefik.http.middlewares.test-ipwhitelist.ipwhitelist.sourcerange=127.0.0.1/32, 10.0.0.0/8"
+    environment:
+      - "TZ=${TIMEZONE}"
+      - "RFC2136_NAMESERVER=${RFC2136_NAMESERVER}"
+      - "RFC2136_TSIG_ALGORITHM=${RFC2136_TSIG_ALGORITHM}"
+      - "RFC2136_TSIG_KEY=${RFC2136_TSIG_KEY}"
+      - "RFC2136_TSIG_SECRET=${RFC2136_TSIG_SECRET}"
+    volumes:
+      - ./traefik/traefik.yaml:/etc/traefik/traefik.yaml:ro
+      - ./traefik/acme/acme.json:/acme.json
+      - ./traefik/rules:/rules:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8086:8086"
+      - "22:22"
+      - "5900:5900"
+    networks:
+      smarthome-network:
+        aliases:
+          - traefik
+      twilio-phone-ng_webphone-network:
+        aliases:
+          - traefik
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+
+  heimdall:
+    container_name: heimdall
+    image: linuxserver/heimdall
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=smart-home_smarthome-network"
+      - "traefik.http.routers.heimdall.rule=Host(`${DOMAIN_NAME}`)"
+      - "traefik.http.routers.heimdall.entrypoints=http"
+      - "traefik.http.routers.heimdall.middlewares=redirect@file"
+      - "traefik.http.routers.heimdall-secured.rule=Host(`${DOMAIN_NAME}`)"
+      - "traefik.http.routers.heimdall-secured.entrypoints=https"
+      - "traefik.http.routers.heimdall-secured.middlewares=hsts@file"
+      - "traefik.http.routers.heimdall-secured.tls=true"
+    environment:
+      - "TZ=${TIMEZONE}"
+      - "PUID=1000"
+      - "PGID=1000"
+      - "APP_URL=`${DOMAIN_NAME}`"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./heimdall:/config
+    networks:
+      smarthome-network:
+        aliases:
+          - heimdall
+    healthcheck:
+      test: ["CMD", "curl", "-I", "--silent", "--show-error", "--fail", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+
+  gitea:
+    container_name: gitea
+    image: gitea/gitea:latest
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=smart-home_smarthome-network"
+      - "traefik.http.routers.gitea-http.rule=Host(`code.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.gitea-http.entrypoints=http"
+      - "traefik.http.routers.gitea-http.middlewares=redirect@file"
+      - "traefik.http.routers.gitea-https.rule=Host(`code.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.gitea-https.entrypoints=https"
+      - "traefik.http.routers.gitea-https.middlewares=hsts@file"
+      - "traefik.http.routers.gitea-https.tls=true"
+      - "traefik.http.services.gitea-https.loadbalancer.server.port=3010"
+      - "traefik.tcp.routers.gitea-ssh.rule=HostSNI(`*`)"
+      - "traefik.tcp.routers.gitea-ssh.entrypoints=ssh"
+      - "traefik.tcp.routers.gitea-ssh.service=gitea-ssh-svc"
+      - "traefik.tcp.services.gitea-ssh-svc.loadbalancer.server.port=22"
+    environment:
+      - "TZ=${TIMEZONE}"
+      - "PUID=1000"
+      - "PGID=1000"
+      - "DB_TYPE=mysql"
+      - "DB_HOST=${GITEA_DB_HOST}"
+      - "DB_NAME=${GITEA_DB_NAME}"
+      - "DB_USER=${GITEA_DB_USERNAME}"
+      - "DB_PASSWD=${GITEA_DB_PASSWORD}"
+      # - "RUN_MODE=prod"
+      - "SSH_DOMAIN=code.${DOMAIN_NAME}"
+      - "SSH_PORT=22"
+      - "HTTP_PORT=3010"
+      - "ROOT_URL=https://code.home.0dd.me/"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - gitea_data:/data
+    # ports:
+    #   - "3010:3010"
+    #   - "22:22"
+    networks:
+      smarthome-network:
+        aliases:
+          - gitea
+    healthcheck:
+      test: ["CMD", "curl", "-I", "--silent", "--show-error", "--fail", "http://localhost:3010"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+
+  portainer:
+    container_name: portainer
+    image: portainer/portainer
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=smart-home_smarthome-network"
+      - "traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.portainer.entrypoints=http"
+      - "traefik.http.routers.portainer.middlewares=redirect@file"
+      - "traefik.http.routers.portainer-secured.rule=Host(`portainer.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.portainer-secured.entrypoints=https"
+      - "traefik.http.routers.portainer-secured.middlewares=hsts@file"
+      - "traefik.http.routers.portainer-secured.tls=true"
+      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+    environment:
+      - "TZ=${TIMEZONE}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    # ports:
+    #   - "8000:8000"
+    #   - "9000:9000"
+    networks:
+      smarthome-network:
+        aliases:
+          - portainer
+    # healthcheck:
+    #   test: ["CMD", "curl", "-I", "--silent", "--show-error", "--fail", "http://localhost:8080"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 6
+
+  deconz:
+    container_name: deconz
+    image: marthoc/deconz
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=smart-home_smarthome-network"
+      - "traefik.http.routers.deconz-http.rule=Host(`deconz.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.deconz-http.entrypoints=http"
+      - "traefik.http.routers.deconz-http.middlewares=redirect@file"
+      - "traefik.http.routers.deconz-https.rule=Host(`deconz.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.deconz-https.entrypoints=https"
+      - "traefik.http.routers.deconz-https.middlewares=hsts@file"
+      - "traefik.http.routers.deconz-https.tls=true"
+      - "traefik.http.services.deconz-https.loadbalancer.server.port=8080"
+      - "traefik.tcp.routers.deconz-vnc.rule=HostSNI(`*`)"
+      - "traefik.tcp.routers.deconz-vnc.entrypoints=vnc"
+      - "traefik.tcp.routers.deconz-vnc.service=deconz-vnc-svc"
+      - "traefik.tcp.services.deconz-vnc-svc.loadbalancer.server.port=5900"
+    environment:
+      - "TZ=${TIMEZONE}"
+      - "DECONZ_WEB_PORT=8080"
+      - "DECONZ_VNC_MODE=1"
+      - "DECONZ_VNC_PORT=5900"
+      - "DECONZ_VNC_PASSWORD=${DECONZ_VNC_PASSWORD}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - deconz_data:/root/.local/share/dresden-elektronik/deCONZ
+    devices:
+      - /dev/ttyACM0
+    # ports:
+    #   - "8080:8080"
+    #   - "5900:5900"
+    networks:
+      smarthome-network:
+        aliases:
+          - deconz
+    healthcheck:
+      test: ["CMD", "curl", "-I", "--silent", "--show-error", "--fail", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+
+  homeassistant:
+    container_name: homeassistant
+    image: homeassistant/home-assistant:stable
+    restart: unless-stopped
+    privileged: true
+    depends_on:
+      - deconz
+      - influxdb
+    environment:
+      - "TZ=${TIMEZONE}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./homeassistant:/config
+    network_mode: host
+    # ports:
+    #   - "8123:8123"
+    #   - "51827:51827"
+    # networks:
+    #   smarthome-network:
+    #     aliases:
+    #       - homeassistant
+    healthcheck:
+      test: ["CMD", "curl", "-X", "GET", "-I", "--silent", "--show-error", "--fail", "http://localhost:8123"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+
+  nodered:
+    container_name: nodered
+    image: nodered/node-red
+    restart: unless-stopped
+    depends_on:
+      - homeassistant
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=smart-home_smarthome-network"
+      - "traefik.http.routers.nodered.rule=Host(`nodered.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.nodered.entrypoints=http"
+      - "traefik.http.routers.nodered.middlewares=redirect@file"
+      - "traefik.http.routers.nodered-secured.rule=Host(`nodered.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.nodered-secured.entrypoints=https"
+      - "traefik.http.routers.nodered-secured.middlewares=hsts@file"
+      - "traefik.http.routers.nodered-secured.tls=true"
+    environment:
+      - "TZ=${TIMEZONE}"
+    volumes:
+        - /etc/localtime:/etc/localtime:ro
+        - nodered_data:/data
+    # ports:
+    #   - "1880:1880"
+    networks:
+      smarthome-network:
+        aliases:
+          - nodered
+    healthcheck:
+      test: ["CMD", "curl", "-I", "--silent", "--show-error", "--fail", "http://localhost:1880"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+
+  appdaemon:
+    container_name: appdaemon
+    image: acockburn/appdaemon
+    restart: unless-stopped
+    depends_on:
+      - homeassistant
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=smart-home_smarthome-network"
+      - "traefik.http.routers.appdaemon.rule=Host(`appdaemon.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.appdaemon.entrypoints=http"
+      - "traefik.http.routers.appdaemon.middlewares=redirect@file"
+      - "traefik.http.routers.appdaemon-secured.rule=Host(`appdaemon.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.appdaemon-secured.entrypoints=https"
+      - "traefik.http.routers.appdaemon-secured.middlewares=hsts@file"
+      - "traefik.http.routers.appdaemon-secured.tls=true"
+    environment:
+      - "TZ=${TIMEZONE}"
+      # - "HA_URL=https://hass.${DOMAIN_NAME}"
+      # - "TOKEN=${HA_APPDAEMON_KEY}"
+      # - "DASH_URL=http://localhost:5050"
+      - "EXTRA_CMD=-D INFO"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./appdaemon:/conf
+    # ports:
+    #   - "5050:5050"
+    networks:
+      smarthome-network:
+        aliases:
+          - appdaemon
+    healthcheck:
+      test: ["CMD", "curl", "-I", "--silent", "--show-error", "--fail", "http://localhost:5050"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+
+  influxdb:
+    container_name: influxdb
+    image: influxdb
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=smart-home_smarthome-network"
+      - "traefik.http.routers.influxdb-secure.rule=Host(`influxdb.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.influxdb-secure.entrypoints=influxdb"
+      - "traefik.http.routers.influxdb-secure.tls=true"
+      - "traefik.http.services.influxdb-secure.loadBalancer.server.port=8086"
+    environment:
+      - "TZ=${TIMEZONE}"
+      - "INFLUX_DB=homeassistant"
+      - "INFLUXDB_HTTP_ENABLED=true"
+      - "INFLUXDB_ADMIN_USER=${INFLUXDB_USERNAME}"
+      - "INFLUXDB_ADMIN_PASSWORD=${INFLUXDB_PASSWORD}"
+      - "INFLUXDB_REPORTING_DISABLED=true"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - influxdb_data:/var/lib/influxdb
+    # ports:
+    #   - "8086:8086"
+    networks:
+      smarthome-network:
+        aliases:
+          - influxdb
+    healthcheck:
+      test: ["CMD", "curl", "-I", "--silent", "--show-error", "--fail", "http://localhost:8086/ping"]
+      interval: 30s
+      timeout: 1s
+      retries: 24
+
+  chronograf:
+    container_name: chronograf
+    image: chronograf
+    restart: unless-stopped
+    depends_on:
+      - "influxdb"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=smart-home_smarthome-network"
+      - "traefik.http.routers.chronograf.rule=Host(`chronograf.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.chronograf.entrypoints=http"
+      - "traefik.http.routers.chronograf.middlewares=redirect@file"
+      - "traefik.http.routers.chronograf-secured.rule=Host(`chronograf.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.chronograf-secured.entrypoints=https"
+      - "traefik.http.routers.chronograf-secured.middlewares=hsts@file"
+      - "traefik.http.routers.chronograf-secured.tls=true"
+    environment:
+      - "TZ=${TIMEZONE}"
+      - "INFLUXDB_URL=https://influxdb:8086"
+      - "INFLUXDB_USERNAME=${INFLUXDB_USERNAME}"
+      - "INFLUXDB_PASSWORD=${INFLUXDB_PASSWORD}"
+      - "REPORTING_DISABLED=true"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - chronograf_data:/var/lib/chronograf
+    # ports:
+    #   - "8888:8888"
+    networks:
+      smarthome-network:
+        aliases:
+          - chronograf
+    healthcheck:
+      test: ["CMD", "curl", "-I", "--silent", "--show-error", "--fail", "http://localhost:8888"]
+      interval: 30s
+      timeout: 1s
+      retries: 24
+
+  grafana:
+    container_name: grafana
+    image: grafana/grafana
+    restart: unless-stopped
+    depends_on:
+      - "influxdb"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=smart-home_smarthome-network"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.grafana.entrypoints=http"
+      - "traefik.http.routers.grafana.middlewares=redirect@file"
+      - "traefik.http.routers.grafana-secured.rule=Host(`grafana.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.grafana-secured.entrypoints=https"
+      - "traefik.http.routers.grafana-secured.middlewares=hsts@file"
+      - "traefik.http.routers.grafana-secured.tls=true"
+    environment:
+      - "TZ=${TIMEZONE}"
+      - "GF_SERVER_ROOT_URL=https://grafana.${DOMAIN_NAME}"
+      - "GF_SERVER_DOMAIN=grafana.${DOMAIN_NAME}"
+      - "GF_SECURITY_ADMIN_USER=${GRAFANA_USERNAME}"
+      - "GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}"
+      - "GF_INSTALL_PLUGINS=grafana-piechart-panel,grafana-clock-panel,grafana-simple-json-datasource,ryantxu-ajax-panel,farski-blendstat-panel,petrslavotinek-carpetplot-panel,fatcloud-windrose-panel,natel-discrete-panel,pr0ps-trackmap-panel,alexandra-trackmap-panel,blackmirror1-singlestat-math-panel,snuids-radar-panel,corpglory-progresslist-panel,natel-plotly-panel,michaeldmoore-multistat-panel,simpod-json-datasource"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - grafana_data:/var/lib/grafana
+    # ports:
+    #   - "3000:3000"
+    networks:
+      smarthome-network:
+        aliases:
+          - grafana
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "--tries=1", "http://localhost:3000"]
+      interval: 30s
+      timeout: 1s
+      retries: 24
+
+  motioneye:
+    container_name: motioneye
+    image: ccrisan/motioneye:master-amd64
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=smart-home_smarthome-network"
+      - "traefik.http.routers.motioneye.rule=Host(`motioneye.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.motioneye.entrypoints=http"
+      - "traefik.http.routers.motioneye.middlewares=redirect@file"
+      - "traefik.http.routers.motioneye-secured.rule=Host(`motioneye.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.motioneye-secured.entrypoints=https"
+      - "traefik.http.routers.motioneye-secured.middlewares=hsts@file"
+      - "traefik.http.routers.motioneye-secured.tls=true"
+      - "traefik.http.services.motioneye-secured.loadbalancer.server.port=8765"
+    environment:
+      - "TZ=${TIMEZONE}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./motioneye:/etc/motioneye
+      - motioneye_data:/var/lib/motioneye
+    # ports:
+    #   - "8081:8081"
+    #   - "8765:8765"
+    networks:
+      smarthome-network:
+        aliases:
+          - motioneye
+    healthcheck:
+      test: ["CMD", "curl", "-I", "--silent", "--show-error", "--fail", "http://localhost:8765"]
+      interval: 30s
+      timeout: 1s
+      retries: 24
+
+
+  bookstack:
+    container_name: bookstack
+    image: linuxserver/bookstack
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=smart-home_smarthome-network"
+      - "traefik.http.routers.bookstack.rule=Host(`notes.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.bookstack.entrypoints=http"
+      - "traefik.http.routers.bookstack.middlewares=redirect@file"
+      - "traefik.http.routers.bookstack-secured.rule=Host(`notes.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.bookstack-secured.entrypoints=https"
+      - "traefik.http.routers.bookstack-secured.middlewares=hsts@file"
+      - "traefik.http.routers.bookstack-secured.tls=true"
+    environment:
+      - "TZ=${TIMEZONE}"
+      - "PUID=1000"
+      - "PGID=1000"
+      - "DB_HOST=${BOOKSTACK_DB_HOST}"
+      - "DB_USER=${BOOKSTACK_DB_USERNAME}"
+      - "DB_PASS=${BOOKSTACK_DB_PASSWORD}"
+      - "DB_DATABASE=${BOOKSTACK_DB_DATABASE}"
+      - "APP_URL=https://notes.home.0dd.me"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./bookstack:/config
+    networks:
+      smarthome-network:
+        aliases:
+          - bookstack
+    healthcheck:
+      test: ["CMD", "curl", "-I", "--silent", "--show-error", "--fail", "http://localhost:80"]
+      interval: 30s
+      timeout: 1s
+      retries: 24
+
+  # homebridge:
+  #   container_name: homebridge
+  #   image: oznu/homebridge:latest
+  #   restart: unless-stopped
+  #   environment:
+  #     - "TZ=${TIMEZONE}"
+  #     - "PGID=${LOCAL_USER}"
+  #     - "PUID=${LOCAL_GROUP}"
+  #     - "HOMEBRIDGE_CONFIG_UI=1"
+  #     - "HOMEBRIDGE_CONFIG_UI_PORT=8090"
+  #   volumes:
+  #     - /etc/localtime:/etc/localtime:ro
+  #     - ./homebridge:/homebridge
+  #   network_mode: host
+
+networks:
+  smarthome-network:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: smarthome-br
+    ipam:
+      driver: default
+      config:
+        - subnet: ${IPV4_NETWORK:-172.16.0}.0/24
+  smarthome-frontend:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: smarthome-frontend-br
+    ipam:
+      driver: default
+      config:
+        - subnet: ${IPV4_NETWORK:-172.16.1}.0/24
+  smarthome-backend:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: smarthome-backend-br
+    ipam:
+      driver: default
+      config:
+        - subnet: ${IPV4_NETWORK:-172.16.2}.0/24
+  twilio-phone-ng_webphone-network:
+    external: true
+
+volumes:
+  portainer_data:
+  nodered_data:
+  deconz_data:
+  influxdb_data:
+  chronograf_data:
+  grafana_data:
+  motioneye_data:
+  gitea_data:
