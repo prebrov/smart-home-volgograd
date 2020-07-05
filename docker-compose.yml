@@ -43,14 +43,14 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ./homeassistant:/config
-    #network_mode: host
-    ports:
-      - "8123:8123"
-      - "51827:51827"
-    networks:
-      smarthome-network:
-        aliases:
-          - hass
+    network_mode: host
+    # ports:
+    #   - "8123:8123"
+    #   - "51827:51827"
+    # networks:
+    #   smarthome-network:
+    #     aliases:
+    #       - hass
     healthcheck:
       test: ["CMD", "curl", "-X", "GET", "-I", "--silent", "--show-error", "--fail", "http://localhost:8123"]
       interval: 30s
