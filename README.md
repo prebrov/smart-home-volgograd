@@ -45,3 +45,7 @@
 Чтобы рестартануть Home Assistant:
 `docker-compose restart homeassistant`
 
+# Полезные ссылки
+
+- Многостраничный гид по установке и настройке Home Assistant и deConz: https://sprut.ai/client/article/155
+- Интеграция deConz и HomeAssistant: https://sprut.ai/client/article/267. deConz должен быть обнаружен, поэтому нас интересует последовательность действий после фразы "После перезагрузки Home Assistant, мы идем в раздел настроек и совершаем следующие действия", на второй половине страницы.
