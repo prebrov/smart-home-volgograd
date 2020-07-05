@@ -1,0 +1,18 @@
+## ALL
+.env
+
+## Deconz
+deconz/
+
+## Home Assistant
+secret*
+home-assistant_v2.db
+homeassistant/.*
+homeassistant/www/photos/
+homeassistant/tts/*.mp3
+homeassistant/icloud/
+
+## Homebridge
+auth.json
+
+#!.gitignore
