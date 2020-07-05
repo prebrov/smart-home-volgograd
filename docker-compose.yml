@@ -31,6 +31,32 @@ services:
       timeout: 10s
       retries: 6
 
+  homeassistant:
+    container_name: homeassistant
+    image: homeassistant/home-assistant:stable
+    restart: unless-stopped
+    privileged: true
+    depends_on:
+      - deconz
+    environment:
+      - "TZ=${TIMEZONE}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./homeassistant:/config
+    #network_mode: host
+    ports:
+      - "8123:8123"
+      - "51827:51827"
+    networks:
+      smarthome-network:
+        aliases:
+          - hass
+    healthcheck:
+      test: ["CMD", "curl", "-X", "GET", "-I", "--silent", "--show-error", "--fail", "http://localhost:8123"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+
 networks:
   smarthome-network:
     driver: bridge
